@@ -117,28 +117,7 @@ class Scheduler:
     def __iter__(self):
         return self
 
-    def next(self): # Python 2 support
-        self._lock.acquire()
-        ndata = self._ndata.value
-        start = self._start.value
-        chunk = self._chunk
-        if ndata:
-            if chunk > ndata:
-                _s0 = start
-                _s1 = start + ndata
-                self._ndata.value = 0
-            else:
-                _s0 = start
-                _s1 = start + chunk
-                self._ndata.value = ndata - chunk
-                self._start.value = start + chunk
-            self._lock.release()
-            return slice(_s0, _s1)
-        else:
-            self._lock.release()
-            raise StopIteration
-
-    def __next__(self): # Python 3 support
+    def __next__(self):
         self._lock.acquire()
         ndata = self._ndata.value
         start = self._start.value
