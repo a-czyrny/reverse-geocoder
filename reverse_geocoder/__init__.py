@@ -6,19 +6,15 @@ called reverse_geocode developed by Richard Penman.
 from __future__ import print_function
 
 __author__ = 'Ajay Thampi'
-import os
-import sys
-import csv
-if sys.platform == 'win32':
-    # Windows C long is 32 bits, and the Python int is too large to fit inside.
-    # Use the limit appropriate for a 32-bit integer as the max file size
-    csv.field_size_limit(2**31-1)
-else:
-    csv.field_size_limit(sys.maxsize)
-import zipfile
+
 from scipy.spatial import cKDTree as KDTree
 from reverse_geocoder import cKDTree_MP as KDTree_MP
+
+import csv
+import os
 import numpy as np
+import urllib.request
+import zipfile
 
 GN_URL = 'http://download.geonames.org/export/dump/'
 GN_CITIES1000 = 'cities1000'
@@ -75,25 +71,24 @@ A = 6378.137
 # WGS-84 eccentricity squared
 E2 = 0.00669437999014
 
-def singleton(cls):
-    """
-    Function to get single instance of the RGeocoder class
-    """
-    instances = {}
-    def getinstance(**kwargs):
-        """
-        Creates a new RGeocoder instance if not created already
-        """
-        if cls not in instances:
-            instances[cls] = cls(**kwargs)
-        return instances[cls]
-    return getinstance
 
-@singleton
-class RGeocoder(object):
+class Singleton(type):
+    """
+    As a meta class "Singleton" prevents the multiple instancing of a class.
+    """
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+
+class RGeocoder(metaclass=Singleton):
     """
     The main reverse geocoder class
     """
+
     def __init__(self, mode=2, verbose=True, stream=None):
         """ Class Instantiation
         Args:
@@ -110,9 +105,9 @@ class RGeocoder(object):
         else:
             coordinates, self.locations = self.extract(rel_path(RG_FILE))
 
-        if mode == 1: # Single-process
+        if mode == 1:  # Single-process
             self.tree = KDTree(coordinates)
-        else: # Multi-process
+        else:  # Multi-process
             self.tree = KDTree_MP.cKDTree_MP(coordinates)
 
     def query(self, coordinates):
@@ -127,7 +122,8 @@ class RGeocoder(object):
             _, indices = self.tree.pquery(coordinates, k=1)
         return [self.locations[index] for index in indices]
 
-    def load(self, stream):
+    @staticmethod
+    def load(stream):
         """
         Function that loads a custom data source
         Args:
@@ -140,8 +136,8 @@ class RGeocoder(object):
 
         if header != RG_COLUMNS:
             raise csv.Error('Input must be a comma-separated file with header containing ' + \
-                'the following columns - %s. For more help, visit: ' % (','.join(RG_COLUMNS)) + \
-                'https://github.com/thampiman/reverse-geocoder')
+                            'the following columns - %s. For more help, visit: ' % (','.join(RG_COLUMNS)) + \
+                            'https://github.com/thampiman/reverse-geocoder')
 
         # Load all the coordinates and locations
         geo_coords, locations = [], []
@@ -167,27 +163,20 @@ class RGeocoder(object):
             gn_admin1_url = GN_URL + GN_ADMIN1
             gn_admin2_url = GN_URL + GN_ADMIN2
 
-            cities1000_zipfilename = GN_CITIES1000 + '.zip'
+            cities1000_zip_filename = GN_CITIES1000 + '.zip'
             cities1000_filename = GN_CITIES1000 + '.txt'
 
-            if not os.path.exists(cities1000_zipfilename):
+            if not os.path.exists(cities1000_zip_filename):
                 if self.verbose:
                     print('Downloading files from Geoname...')
-                try: # Python 3
-                    import urllib.request
-                    urllib.request.urlretrieve(gn_cities1000_url, cities1000_zipfilename)
-                    urllib.request.urlretrieve(gn_admin1_url, GN_ADMIN1)
-                    urllib.request.urlretrieve(gn_admin2_url, GN_ADMIN2)
-                except ImportError: # Python 2
-                    import urllib
-                    urllib.urlretrieve(gn_cities1000_url, cities1000_zipfilename)
-                    urllib.urlretrieve(gn_admin1_url, GN_ADMIN1)
-                    urllib.urlretrieve(gn_admin2_url, GN_ADMIN2)
 
+                urllib.request.urlretrieve(gn_cities1000_url, cities1000_zip_filename)
+                urllib.request.urlretrieve(gn_admin1_url, GN_ADMIN1)
+                urllib.request.urlretrieve(gn_admin2_url, GN_ADMIN2)
 
             if self.verbose:
                 print('Extracting cities1000...')
-            _z = zipfile.ZipFile(open(cities1000_zipfilename, 'rb'))
+            _z = zipfile.ZipFile(open(cities1000_zip_filename, 'rb'))
             open(cities1000_filename, 'wb').write(_z.read(cities1000_filename))
 
             if self.verbose:
@@ -208,7 +197,7 @@ class RGeocoder(object):
             writer = csv.DictWriter(open(local_filename, 'wt'), fieldnames=RG_COLUMNS)
             rows = []
             for row in csv.reader(open(cities1000_filename, 'rt'), \
-                    delimiter='\t', quoting=csv.QUOTE_NONE):
+                                  delimiter='\t', quoting=csv.QUOTE_NONE):
                 lat = row[GN_COLUMNS['latitude']]
                 lon = row[GN_COLUMNS['longitude']]
                 name = row[GN_COLUMNS['asciiName']]
@@ -217,8 +206,8 @@ class RGeocoder(object):
                 admin1_c = row[GN_COLUMNS['admin1Code']]
                 admin2_c = row[GN_COLUMNS['admin2Code']]
 
-                cc_admin1 = cc+'.'+admin1_c
-                cc_admin2 = cc+'.'+admin1_c+'.'+admin2_c
+                cc_admin1 = cc + '.' + admin1_c
+                cc_admin2 = cc + '.' + admin1_c + '.' + admin2_c
 
                 admin1 = ''
                 admin2 = ''
@@ -228,12 +217,12 @@ class RGeocoder(object):
                 if cc_admin2 in admin2_map:
                     admin2 = admin2_map[cc_admin2]
 
-                write_row = {'lat':lat,
-                             'lon':lon,
-                             'name':name,
-                             'admin1':admin1,
-                             'admin2':admin2,
-                             'cc':cc}
+                write_row = {'lat': lat,
+                             'lon': lon,
+                             'name': name,
+                             'admin1': admin1,
+                             'admin2': admin2,
+                             'cc': cc}
                 rows.append(write_row)
             writer.writeheader()
             writer.writerows(rows)
@@ -248,6 +237,7 @@ class RGeocoder(object):
             geo_coords.append((row['lat'], row['lon']))
             locations.append(row)
         return geo_coords, locations
+
 
 def geodetic_in_ecef(geo_coords):
     geo_coords = np.asarray(geo_coords).astype(np.float)
@@ -264,11 +254,13 @@ def geodetic_in_ecef(geo_coords):
 
     return np.column_stack([x, y, z])
 
+
 def rel_path(filename):
     """
     Function that gets relative path to the filename
     """
     return os.path.join(os.getcwd(), os.path.dirname(__file__), filename)
+
 
 def get(geo_coord, mode=2, verbose=True):
     """
@@ -279,6 +271,7 @@ def get(geo_coord, mode=2, verbose=True):
 
     _rg = RGeocoder(mode=mode, verbose=verbose)
     return _rg.query([geo_coord])[0]
+
 
 def search(geo_coords, mode=2, verbose=True):
     """
@@ -291,6 +284,7 @@ def search(geo_coords, mode=2, verbose=True):
 
     _rg = RGeocoder(mode=mode, verbose=verbose)
     return _rg.query(geo_coords)
+
 
 if __name__ == '__main__':
     print('Testing single coordinate through get...')
